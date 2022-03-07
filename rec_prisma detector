@@ -63,7 +63,7 @@ tallies = openmc.Tallies()
 surfaces_to_tally = [
     xmax,xmin,ymax,ymin,zmax,zmin
 ]
-for surface_id, surface in zip(range(1,9), surfaces_to_tally):
+???for surface_id, surface in zip(range(1,9), surfaces_to_tally):
     surface_filter = openmc.SurfaceFilter(surface)
     dose_tally = openmc.Tally(name="dose_tally_on_surface_"+str(surface_id))
     dose_tally.scores = ["current"]
@@ -88,8 +88,8 @@ for surface_id, surface in zip(range(1,9), surfaces_to_tally):
     tally_std_dev = df['std. dev.'].sum()
 
     # convert from the tally output units of pSv cm² to pSv by dividing by the surface area of the surface
-    dose_in_pSv = tally_result / (?)
-    distances.append(?)
+   ?? dose_in_pSv = tally_result / (?)
+    ??distances.append(?)
 
     source_activity = 11890  # in decays per second (Bq)
     emission_rate = 2  # the number of gammas emitted per decay which is approximately 2 for Co60
