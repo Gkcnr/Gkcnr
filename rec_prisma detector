@@ -88,7 +88,7 @@ for surface_id, surface in zip(range(1,9), surfaces_to_tally):
     tally_std_dev = df['std. dev.'].sum()
 
     # convert from the tally output units of pSv cm² to pSv by dividing by the surface area of the surface
-    dose_in_pSv = tally_result / (2 * (a+b) *(b+c)*(a+c))
+    dose_in_pSv = tally_result / (?)
     distances.append(?)
 
     source_activity = 11890  # in decays per second (Bq)
