@@ -1,0 +1,105 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import openmc
+import pandas as pd
+cesium_iodide = openmc.Material()
+cesium_iodide.add_element('Cs', 1)
+cesium_iodide.add_element('I', 1)                  
+cesium_iodide.set_density('g/cm3', 4.51) 
+materials = openmc.Materials([cesium_iodide])
+materials.cross_section='C:/Users/Gokcenur/endfb71_hdf5/cross_sections.xml'
+materials.export_to_xml()
+materials = openmc.Materials()
+materials +=[cesium_iodide]
+isinstance(materials, list)  
+a=5
+b=2
+c=11
+xmin=openmc.XPlane(x0=11,boundary_type="periodic")
+xmax = openmc.XPlane(x0=-11,boundary_type="periodic")
+ymin = openmc.YPlane(y0=5,boundary_type="periodic")
+ymax = openmc.YPlane (y0=-5,boundary_type="periodic")
+xmax.periodic_surface = xmin
+ymin.periodic_surface = ymax
+zmin = openmc.ZPlane(z0=2,boundary_type="periodic")
+zmax = openmc.ZPlane(z0=-2,boundary_type="periodic")
+zmax.periodic_surface=zmin
+mats = openmc.Materials((cesium_iodide,))
+region = +xmax &- xmin & +ymax  &-ymin & +zmax &-zmin 
+rec_prisma= openmc.Cell(region=region)
+rec_prisma.fill = cesium_iodide
+universe = openmc.Universe(
+    cells=[rec_prisma])
+universe.plot(width = (30.0,30.0),basis = 'xz')
+geometry = openmc.Geometry(universe)             
+geometry.export_to_xml() 
+universe = openmc.Universe(cells=[rec_prisma])  
+
+# Instantiate a Settings object
+sett = openmc.Settings()
+sett.batches = 6
+sett.inactive = 0
+sett.particles = 1000
+sett.run_mode = 'fixed source'
+
+# Create a gamma point source
+source = openmc.Source()
+source.space = openmc.stats.Point((0, 0, 0))
+source.angle = openmc.stats.Isotropic()
+# This is a Co60 source, see the task on sources to understand it
+source.energy = openmc.stats.Discrete([1.1732e6,1.3325e6], [0.5, 0.5])
+source.particle = 'photon'
+sett.source = source
+energy_bins_p, dose_coeffs_p = openmc.data.dose_coefficients(
+    particle='photon',
+    geometry='AP'
+)
+energy_function_filter_p = openmc.EnergyFunctionFilter(
+    energy_bins_p,
+    dose_coeffs_p
+)
+photon_particle_filter = openmc.ParticleFilter(["photon"])
+tallies = openmc.Tallies()
+surfaces_to_tally = [
+    xmax,xmin,ymax,ymin,zmax,zmin
+]
+for surface_id, surface in zip(range(1,9), surfaces_to_tally):
+    surface_filter = openmc.SurfaceFilter(surface)
+    dose_tally = openmc.Tally(name="dose_tally_on_surface_"+str(surface_id))
+    dose_tally.scores = ["current"]
+    dose_tally.filters = [
+        surface_filter,
+        photon_particle_filter,
+        energy_function_filter_p,
+    ]
+    tallies.append(dose_tally)
+    import math
+
+# open the results file
+sp = openmc.StatePoint(sp_filename)
+
+dose_rates_in_pSv = []
+distances = []
+# access the tally using pandas dataframes
+for surface_id, surface in zip(range(1,9), surfaces_to_tally):
+    tally = sp.get_tally(name='dose_tally_on_surface_'+str(surface_id))
+    df = tally.get_pandas_dataframe()
+    tally_result = df['mean'].sum()
+    tally_std_dev = df['std. dev.'].sum()
+
+    # convert from the tally output units of pSv cm² to pSv by dividing by the surface area of the surface
+    dose_in_pSv = tally_result / (2 * (a+b) *(b+c)*(a+c))
+    distances.append(?)
+
+    source_activity = 11890  # in decays per second (Bq)
+    emission_rate = 2  # the number of gammas emitted per decay which is approximately 2 for Co60
+    gamma_per_second = source_activity * emission_rate
+    dose_rate_in_pSv = dose_in_pSv * gamma_per_second
+    
+    dose_rates_in_pSv.append(dose_rate_in_pSv)
+
+# print results
+print('The surface dose = ', dose_rates_in_pSv, 'pSv per second')
+print('At distances = ', distances)
+    
+    
