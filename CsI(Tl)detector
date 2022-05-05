@@ -1,0 +1,176 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import openmc
+import pandas as pd
+import os
+import plotly.graph_objects as go
+
+energy_bins_n, dose_coeffs_n = openmc.data.dose_coefficients(
+    particle='neutron',
+    geometry='AP'  # AP defines the direction of the source to person, for more details see documentation https://docs.openmc.org/en/stable/pythonapi/generated/openmc.data.dose_coefficients.html
+)
+
+energy_bins_p, dose_coeffs_p = openmc.data.dose_coefficients(particle='photon', geometry='AP')
+
+fig = go.Figure()
+
+fig.update_layout(
+      title='ICRP Effective Dose Coefficient (AP)',
+      xaxis={'title': 'Energy (eV)',
+             'range': (0, 14.1e6)},
+      yaxis={'title': 'Effective dose per fluence, in units of pSv cm²'}
+)
+
+
+fig.add_trace(go.Scatter(
+    x=energy_bins_p,
+    y=dose_coeffs_p,
+    mode='lines',
+    name='photon'
+))
+
+fig.add_trace(go.Scatter(
+    x=energy_bins_n,
+    y=dose_coeffs_n,
+    mode='lines',
+    name='neutron'
+))
+
+ #******************#
+ # Create Materials #
+ #******************#
+ 
+cesium_iodide = openmc.Material()
+cesium_iodide.add_element('Cs', 0.5)
+cesium_iodide.add_element('I', 0.5)                  
+cesium_iodide.set_density('g/cm3', 4.51) 
+
+
+air = openmc.Material(name='air')
+air.add_element('N', 0.784431)
+air.add_element('O', 0.210748)
+air.add_element('Ar',0.0046)           
+air.temperature = 300        
+air.set_density('g/cm3', 0.0012)
+
+materials = openmc.Materials([cesium_iodide,air])
+materials.cross_section='C:/Users/Gokcenur/endfb71_hdf5/cross_sections.xml'
+materials.export_to_xml()
+
+
+#****************#
+#Create Geometry #
+#****************#
+# Create the detector
+# -------------------
+
+
+
+# Create the dectector
+# --------------------
+det_rect_prism = openmc.model.rectangular_prism(5.0, 10.0, axis='z', origin=(0.0, 0.0))
+det_zmin = openmc.ZPlane(z0 = -10, boundary_type = 'transmission')
+det_zmax = openmc.ZPlane(z0 = +0, boundary_type = 'transmission')
+
+detector = det_rect_prism  & +det_zmin & -det_zmax
+detector_cell =  openmc.Cell(fill= cesium_iodide, region=detector)
+
+
+
+# Create a source sphere just to aid vitualisation but it can be removed later
+# ----------------------------------------------------------------------------
+source = openmc.Sphere(x0=+30.0, y0=0.0, z0=0.0, r=2.0, name='Source Container')
+source_cell = openmc.Cell(fill=None, region=-source)
+
+# Create the external environment
+# --------------------------------
+sphere = openmc.Sphere(x0=30.0, y0=0.0, z0=0.0, r = 80, boundary_type = 'vacuum')
+environment = -sphere & ~detector  & +source
+environment_cell = openmc.Cell(fill=air, region=environment)
+
+universe = openmc.Universe(cells=[environment_cell, detector_cell, source_cell])
+
+
+universe.plot(width = (20.0,20.0),basis = 'xz')
+geometry = openmc.Geometry(universe)
+geometry.export_to_xml()
+
+
+#****************************************#
+#Plot the Geometry using slice (2D) plot #
+#****************************************#
+p = openmc.Plot()
+p.filename = 'detector'
+p.width = (250, 250)
+p.pixels = (600, 600)
+p.color_by = 'cell'
+p.colors = {environment_cell: 'yellow', detector_cell: 'blue', source_cell: 'red'}
+
+# Create a plot and export to XML
+plots = openmc.Plots([p])
+plots.export_to_xml()
+openmc.plot_geometry()
+
+
+
+# Specify the source
+#-------------------
+source = openmc.Source()
+source.space = openmc.stats.Point(xyz=(60, 0, 0))
+source.angle = openmc.stats.Isotropic()
+# This is a Co60 source, see the task on sources to understand it
+source.energy = openmc.stats.Discrete([1.1732e6,1.3325e6], [0.5, 0.5])
+source.particle = 'photon'
+source.strength = 1.0
+
+settings = openmc.Settings()
+settings.run_mode = 'fixed source'
+settings.source = source
+settings.batches = 20
+settings.particles = 100000
+settings.export_to_xml()
+
+number_bins = 101
+bins_both = np.linspace(0, 1e6, number_bins)
+
+energy_function_filter_n = openmc.EnergyFunctionFilter(energy_bins_n, dose_coeffs_n)
+energy_function_filter_p = openmc.EnergyFunctionFilter(energy_bins_p, dose_coeffs_p)
+
+photon_particle_filter = openmc.ParticleFilter(["photon"])
+surface_filter = openmc.SurfaceFilter(sphere)
+
+tallies = openmc.Tallies()
+
+dose_tally = openmc.Tally(name="dose_tally_on_surface")
+dose_tally.scores = ["current"]
+dose_tally.filters = [
+    surface_filter,
+    photon_particle_filter,
+    energy_function_filter_p,
+]
+tallies.append(dose_tally)
+model = openmc.model.Model(geometry, materials, settings, tallies)
+!rm *.h5
+sp_filename = model.run()
+import math
+
+# open the results file
+sp = openmc.StatePoint(sp_filename)
+
+# access the tally using pandas dataframes
+tally = sp.get_tally(name='dose_tally_on_surface')
+df = tally.get_pandas_dataframe()
+
+tally_result = df['mean'].sum()
+tally_std_dev = df['std. dev.'].sum()
+
+# convert from the tally output units of pSv cm² to pSv by dividing by the surface area of the surface
+dose_in_pSv = tally_result / (4 * math.pi * math.pow(80, 2))
+
+source_activity = 124300 # in decays per second (Bq)
+emission_rate = 2  # the number of gammas emitted per decay which is approximately 2 for Co60
+gamma_per_second = source_activity * emission_rate
+dose_rate_in_pSv = dose_in_pSv * gamma_per_second
+
+# print results
+print('The surface dose = ', dose_rate_in_pSv, 'pico Sv per second')
